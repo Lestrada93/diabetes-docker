@@ -1,0 +1,173 @@
+name: CI/CD — Diabetes Clasificacion ML
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+
+  # ── Job 1: Pruebas del modelo ──────────────────────────────────────────
+  test-model:
+    name: 🧪 Entrenar y validar modelo
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout del repositorio
+        uses: actions/checkout@v4
+
+      - name: Configurar Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Instalar dependencias
+        run: pip install -r requirements.txt
+
+      - name: Entrenar modelo y verificar SLOs
+        run: python train_model.py
+
+      - name: Verificar que model.pkl fue generado
+        run: |
+          if [ ! -f model.pkl ]; then
+            echo "ERROR: model.pkl no fue generado"
+            exit 1
+          fi
+          if [ ! -f scaler.pkl ]; then
+            echo "ERROR: scaler.pkl no fue generado"
+            exit 1
+          fi
+          echo "✅ Artefactos generados correctamente"
+
+      - name: Subir artefactos del modelo
+        uses: actions/upload-artifact@v4
+        with:
+          name: model-artifacts
+          path: |
+            model.pkl
+            scaler.pkl
+
+  # ── Job 2: Pruebas de la API ───────────────────────────────────────────
+  test-api:
+    name: 🔌 Pruebas de la API FastAPI
+    runs-on: ubuntu-latest
+    needs: test-model
+
+    steps:
+      - name: Checkout del repositorio
+        uses: actions/checkout@v4
+
+      - name: Configurar Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Instalar dependencias
+        run: pip install -r requirements.txt httpx pytest
+
+      - name: Descargar artefactos del modelo
+        uses: actions/download-artifact@v4
+        with:
+          name: model-artifacts
+
+      - name: Crear archivo de pruebas
+        run: |
+          cat > test_api.py << 'EOF'
+          import pytest
+          from fastapi.testclient import TestClient
+          from app import app
+
+          client = TestClient(app)
+
+          def test_health():
+              response = client.get("/health")
+              assert response.status_code == 200
+              data = response.json()
+              assert data["status"] == "ok"
+              assert data["modelo"] == "RandomForest"
+              assert data["umbral"] == 0.2
+
+          def test_predict_alto_riesgo():
+              payload = {
+                  "Pregnancies": 6,
+                  "Glucose": 148,
+                  "BloodPressure": 72,
+                  "SkinThickness": 35,
+                  "Insulin": 0,
+                  "BMI": 33.6,
+                  "DiabetesPedigreeFunction": 0.627,
+                  "Age": 50
+              }
+              response = client.post("/predict", json=payload)
+              assert response.status_code == 200
+              data = response.json()
+              assert "prediccion" in data
+              assert "probabilidad" in data
+              assert "riesgo" in data
+              assert data["prediccion"] in [0, 1]
+              assert 0 <= data["probabilidad"] <= 1
+
+          def test_predict_bajo_riesgo():
+              payload = {
+                  "Pregnancies": 1,
+                  "Glucose": 85,
+                  "BloodPressure": 66,
+                  "SkinThickness": 29,
+                  "Insulin": 0,
+                  "BMI": 26.6,
+                  "DiabetesPedigreeFunction": 0.351,
+                  "Age": 21
+              }
+              response = client.post("/predict", json=payload)
+              assert response.status_code == 200
+              data = response.json()
+              assert data["prediccion"] == 0
+              assert data["riesgo"] == "Bajo"
+
+          def test_home():
+              response = client.get("/")
+              assert response.status_code == 200
+
+          EOF
+
+      - name: Ejecutar pruebas de la API
+        run: pytest test_api.py -v
+
+  # ── Job 3: Build Docker ────────────────────────────────────────────────
+  build-docker:
+    name: 🐳 Construir imagen Docker
+    runs-on: ubuntu-latest
+    needs: test-api
+
+    steps:
+      - name: Checkout del repositorio
+        uses: actions/checkout@v4
+
+      - name: Configurar Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Instalar dependencias y generar modelo
+        run: |
+          pip install -r requirements.txt
+          python train_model.py
+
+      - name: Construir imagen Docker
+        run: docker build -t diabetes-clasificacion-ml:${{ github.sha }} .
+
+      - name: Verificar que el contenedor arranca
+        run: |
+          docker run -d -p 8000:8000 --name test-container \
+            diabetes-clasificacion-ml:${{ github.sha }}
+          sleep 5
+          curl -f http://localhost:8000/health || exit 1
+          echo "✅ Contenedor arrancó correctamente"
+          docker stop test-container
+
+      - name: Etiquetar imagen como latest
+        run: |
+          docker tag diabetes-clasificacion-ml:${{ github.sha }} \
+            diabetes-clasificacion-ml:latest
+          echo "✅ Imagen etiquetada como latest"
