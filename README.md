@@ -40,13 +40,17 @@ Usuario (navegador)
 
 ```
 diabetes-docker/
-├── app.py              # API FastAPI + frontend web
-├── train_model.py      # Script de entrenamiento del modelo
-├── model.pkl           # Modelo Random Forest entrenado
-├── scaler.pkl          # StandardScaler ajustado
-├── requirements.txt    # Dependencias Python
-├── Dockerfile          # Configuración del contenedor
-├── .dockerignore       # Archivos excluidos del contenedor
+├── .github/
+│   └── workflows/
+│       └── ci_cd.yml       # Pipeline CI/CD automatizado
+├── app.py                  # API FastAPI + frontend web
+├── train_model.py          # Script de entrenamiento del modelo
+├── test_api.py             # Pruebas automatizadas de la API
+├── model.pkl               # Modelo Random Forest entrenado
+├── scaler.pkl              # StandardScaler ajustado
+├── requirements.txt        # Dependencias Python
+├── Dockerfile              # Configuración del contenedor
+├── .dockerignore           # Archivos excluidos del contenedor
 └── evidencias/
     ├── frontend.png
     ├── swagger_docs.png
@@ -55,7 +59,12 @@ diabetes-docker/
     ├── swagger_predict.png
     ├── prueba_alto_riesgo.png
     ├── prueba_bajo_riesgo.png
-    └── docker_build_run.png
+    ├── docker_build_run.png
+    ├── github_actions_success.png
+    ├── github_actions_job1_modelo.png
+    ├── github_actions_job2_tests.png
+    ├── github_actions_job3_docker.png
+    └── github_actions_artifacts.png
 ```
 
 ---
@@ -111,6 +120,75 @@ docker run -p 8000:8000 diabetes-clasificacion-ml
 | `http://localhost:8000` | Interfaz web |
 | `http://localhost:8000/docs` | Documentación Swagger |
 | `http://localhost:8000/health` | Estado del servicio |
+
+---
+
+## 🔄 Pipeline CI/CD (GitHub Actions)
+
+El repositorio cuenta con un pipeline de integración y despliegue continuo que se ejecuta automáticamente en cada push a `main`. Está definido en `.github/workflows/ci_cd.yml` y consta de 3 jobs que corren en secuencia:
+
+### Flujo del pipeline
+
+```
+Push a main
+     ↓
+Job 1: Entrenar y validar modelo
+  - Instalar dependencias
+  - Entrenar Random Forest
+  - Verificar SLOs (recall ≥ 0.80)
+  - Verificar artefactos generados
+  - Subir model.pkl y scaler.pkl
+     ↓
+Job 2: Pruebas de la API FastAPI
+  - Descargar artefactos del modelo
+  - Ejecutar 7 pruebas automatizadas
+     ↓
+Job 3: Construir imagen Docker
+  - Build de la imagen
+  - Verificar que el contenedor arranca
+  - Etiquetar imagen como latest
+```
+
+### Pruebas automatizadas incluidas
+
+| Prueba | Descripción |
+|--------|-------------|
+| `test_health` | Verifica endpoint `/health` |
+| `test_home` | Verifica que el frontend carga |
+| `test_predict_alto_riesgo` | Caso clínico con diabetes |
+| `test_predict_bajo_riesgo` | Caso clínico sin diabetes |
+| `test_predict_campos_completos` | Verifica estructura de respuesta |
+| `test_predict_caso_extremo_ceros` | Valores mínimos |
+| `test_predict_caso_extremo_valores_altos` | Valores máximos |
+
+Para ejecutar las pruebas localmente:
+
+```bash
+pip install pytest httpx
+pytest test_api.py -v
+```
+
+### Evidencia del pipeline
+
+#### Pipeline completo — Success
+
+![GitHub Actions Success](evidencias/github_actions_success.png)
+
+#### Job 1 — Entrenar y validar modelo
+
+![Job 1 Modelo](evidencias/github_actions_job1_modelo.png)
+
+#### Job 2 — Pruebas de la API FastAPI
+
+![Job 2 Tests](evidencias/github_actions_job2_tests.png)
+
+#### Job 3 — Construir imagen Docker
+
+![Job 3 Docker](evidencias/github_actions_job3_docker.png)
+
+#### Artefactos versionados del modelo
+
+![Artifacts](evidencias/github_actions_artifacts.png)
 
 ---
 
@@ -196,6 +274,7 @@ El endpoint de salud confirma que el servicio está activo y el modelo cargado c
 - El umbral optimizado de 0.20 permite detectar casos de riesgo con probabilidades bajas, priorizando el recall clínico.
 - La interfaz web comunica correctamente con el backend en todos los escenarios probados.
 - El contenedor Docker es estable y reproducible en entorno local.
+- El pipeline CI/CD garantiza que cada cambio en el código pasa por validación automática antes de ser desplegado.
 
 ---
 
@@ -236,7 +315,7 @@ Dockerfile → Imagen Docker → Docker Hub / Container Registry → Servicio en
 
 ## 🤝 Contribuciones y Dinámica de Trabajo
 
-Proyecto desarrollado individualmente por **Luis Alonso Estrada Uribe** como parte de la Fase II del proyecto integrador de la materia Gestión de Proyectos de Inteligencia Artificial.
+Proyecto desarrollado individualmente por **Luis Alonso Estrada Uribe** como parte de la Fase II y III del proyecto integrador de la materia Gestión de Proyectos de Inteligencia Artificial.
 
 El desarrollo siguió el flujo:
 1. Entrenamiento del modelo (continuación de Fase I)
@@ -244,7 +323,8 @@ El desarrollo siguió el flujo:
 3. Diseño del frontend integrado
 4. Contenerización con Docker
 5. Pruebas funcionales y de casos extremos
-6. Documentación del proceso
+6. Pipeline CI/CD con GitHub Actions
+7. Documentación del proceso
 
 ---
 
